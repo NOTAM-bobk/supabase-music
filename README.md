@@ -4,3 +4,11 @@
 3.  add cloudlfare login to save settings and playlist
 4.  compression scipt for supabase
 5.  opt out of offline dowloding
+
+
+
+
+
+
+--newfeaturefornimbus
+app pwa icon
