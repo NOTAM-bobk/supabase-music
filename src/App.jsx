@@ -436,7 +436,7 @@ function TrackRow({ item, idx, active, isPlaying, fav, dur, settings, accent, ro
         background: item.isFolder ? "linear-gradient(135deg,#ffd87a,#ffc233)" : (active ? "#000" : "rgba(0,0,0,0.05)"),
         border: "2px solid " + (item.isFolder ? "rgba(184,130,10,0.35)" : active ? "#000" : "rgba(0,0,0,0.08)"),
         display: "flex", alignItems: "center", justifyContent: "center",
-        boxShadow: active ? "2px 2px 0 rgba(0,0,0,0.15)" : "none", transition: "all 0.15s", flexShrink: 0
+        boxShadow: active ? "2px 2px 0 rgba(0,0,0,0.15)" : "none", transition: "all 0.15s"
       }}>
         {item.isFolder
           ? <Folder size={14} color="#b8820a" />
