@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 
 /* ─── CONFIG ─────────────────────────────────────────────── */
-const GITHUB_URL        = "https://github.com/your-repo/music-player";
+const GITHUB_URL        = "https://github.com/NOTAM-bobk/supabase-music/tree/main";
 const REQUEST_URL       = "https://docs.google.com/forms/d/e/1FAIpQLSeJZ1qbaUQluhCYTOApX9g7JIDY6AQ4zD3ylS_k31L8NrvhEA/viewform?usp=publish-editor";
 const SUPABASE_URL      = "https://efileseygykszmcudsnf.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVmaWxlc2V5Z3lrc3ptY3Vkc25mIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg1OTM1MDAsImV4cCI6MjA5NDE2OTUwMH0.YSDnxhkds8q4xM9W92vOvEPidl3VsYwAU87wrS-brNk";
