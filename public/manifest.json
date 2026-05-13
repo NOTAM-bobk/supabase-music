@@ -1,6 +1,6 @@
 {
   "name": "My Music Player",
-  "short_name": "Music",
+  "short_name": "JamJolt",
   "description": "Stream and play music offline from your personal library",
   "start_url": "/",
   "display": "standalone",
