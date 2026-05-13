@@ -3,8 +3,7 @@ import {
   Play, Pause, SkipForward, SkipBack, Shuffle, Repeat, Repeat1,
   Search, Settings, X, ChevronLeft, Music, Folder, List, Code,
   MessageSquarePlus, RefreshCw, ChevronRight, Info, Download,
-  Plus, Trash2, FolderPlus, Heart, Clock, Sliders, Moon,
-  BarChart2, Check, Edit3, Save, Volume1, MoreHorizontal, Star
+  Plus, Trash2, FolderPlus, Heart, Sliders, Moon, Check
 } from "lucide-react";
 
 /* ─── CONFIG ─────────────────────────────────────────────── */
@@ -72,52 +71,6 @@ function Visualizer({ isPlaying, bars = 20, color = "#1a1a1a", height = 56 }) {
   }, [isPlaying, bars, color]);
 
   return <canvas ref={canvasRef} width={bars*12} height={height} style={{ width:"100%", height }} />;
-}
-
-/* ─── EQUALIZER PRESET COMPONENT ────────────────────────── */
-const EQ_PRESETS = {
-  Flat:     [0,0,0,0,0,0,0,0,0,0],
-  Bass:     [6,5,4,2,0,0,0,0,0,0],
-  Treble:   [0,0,0,0,0,2,3,4,5,6],
-  Pop:      [-1,0,2,4,4,3,2,0,-1,-1],
-  Rock:     [4,3,1,0,-1,0,1,3,4,4],
-  Jazz:     [3,2,1,2,0,0,1,2,3,2],
-  Classical:[3,2,0,0,0,0,0,1,2,3],
-  Electronic:[4,3,0,0,2,3,3,2,1,4],
-};
-
-function EQPanel({ preset, onPreset, bands, onBand }) {
-  const labels = ["32","64","125","250","500","1K","2K","4K","8K","16K"];
-  return (
-    <div>
-      <div style={{ display:"flex", flexWrap:"wrap", gap:6, marginBottom:14 }}>
-        {Object.keys(EQ_PRESETS).map(p => (
-          <button key={p} onClick={() => onPreset(p)}
-            style={{ padding:"5px 11px", borderRadius:8, border:"2px solid "+(preset===p?"#1a1a1a":"rgba(0,0,0,0.1)"),
-              background:preset===p?"#1a1a1a":"transparent", color:preset===p?"#fff":"#666",
-              fontSize:11, fontWeight:700, cursor:"pointer", fontFamily:"inherit",
-              boxShadow:preset===p?"2px 2px 0 rgba(0,0,0,0.15)":"none", transition:"all 0.12s" }}>
-            {p}
-          </button>
-        ))}
-      </div>
-      <div style={{ display:"flex", gap:10, alignItems:"flex-end", height:100 }}>
-        {bands.map((val,i) => (
-          <div key={i} style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:4, flex:1 }}>
-            <div style={{ fontSize:9, color:"#aaa", fontFamily:"monospace", fontWeight:700 }}>
-              {val > 0 ? `+${val}` : val}
-            </div>
-            <div style={{ position:"relative", height:70, display:"flex", alignItems:"center", justifyContent:"center" }}>
-              <input type="range" min={-12} max={12} step={1} value={val}
-                onChange={e => onBand(i, Number(e.target.value))}
-                style={{ writingMode:"vertical-lr", direction:"rtl", width:20, height:70, accentColor:"#1a1a1a", cursor:"pointer" }} />
-            </div>
-            <div style={{ fontSize:8.5, color:"#bbb", fontFamily:"monospace" }}>{labels[i]}</div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
 }
 
 /* ─── MODAL WRAPPER ──────────────────────────────────────── */
@@ -192,12 +145,11 @@ function CtxMenu({ x, y, song, playlists, onPlay, onFavorite, isFav, onAddToPlay
 }
 
 /* ─── SETTINGS PANEL ─────────────────────────────────────── */
-function SettingsPanel({ settings, onChange, eqBands, onEqBand, eqPreset, onEqPreset, onClose }) {
+function SettingsPanel({ settings, onChange, onClose }) {
   const [tab, setTab] = useState("playback");
   const tabs = [
-    { id:"playback", label:"Playback",   icon:<Play size={12}/> },
-    { id:"eq",       label:"Equalizer",  icon:<BarChart2 size={12}/> },
-    { id:"display",  label:"Display",    icon:<Sliders size={12}/> },
+    { id:"playback", label:"Playback",    icon:<Play size={12}/> },
+    { id:"display",  label:"Display",     icon:<Sliders size={12}/> },
     { id:"info",     label:"How It Works",icon:<Info size={12}/> },
   ];
 
@@ -242,15 +194,6 @@ function SettingsPanel({ settings, onChange, eqBands, onEqBand, eqPreset, onEqPr
               ))}
             </div>
           </SRow>
-        </div>
-      )}
-
-      {tab==="eq" && (
-        <div>
-          <p style={{ fontSize:12, color:"#aaa", marginBottom:14, lineHeight:1.6 }}>
-            The equalizer adjusts the visual feel of the player. Audio EQ requires a backend audio processor.
-          </p>
-          <EQPanel preset={eqPreset} onPreset={onEqPreset} bands={eqBands} onBand={onEqBand} />
         </div>
       )}
 
@@ -392,8 +335,7 @@ export default function App() {
     visualizer:true, compactRows:false, showTrackNums:true,
     sleepMins:0, accent:"#1a1a1a",
   }));
-  const [eqBands,    setEqBands]    = useState(() => loadLocal("eqBands",  EQ_PRESETS.Flat));
-  const [eqPreset,   setEqPreset]   = useState(() => loadLocal("eqPreset", "Flat"));
+
 
   // Sleep timer
   const sleepRef = useRef(null);
@@ -408,8 +350,6 @@ export default function App() {
   useEffect(()=>saveLocal("playlists", playlists),  [playlists]);
   useEffect(()=>saveLocal("favorites", favorites),  [favorites]);
   useEffect(()=>saveLocal("settings",  settings),   [settings]);
-  useEffect(()=>saveLocal("eqBands",   eqBands),    [eqBands]);
-  useEffect(()=>saveLocal("eqPreset",  eqPreset),   [eqPreset]);
 
   // Sleep timer
   useEffect(() => {
@@ -564,8 +504,6 @@ export default function App() {
 
   // Settings change
   const settingChange=(key,val)=>setSettings(s=>({...s,[key]:val}));
-  const handleEqPreset=(name)=>{ setEqPreset(name); setEqBands(EQ_PRESETS[name]); };
-  const handleEqBand=(i,v)=>{ setEqBands(b=>{ const n=[...b]; n[i]=v; return n; }); setEqPreset("Custom"); };
 
   // Build display list
   const getDisplayList=()=>{
@@ -985,7 +923,6 @@ export default function App() {
       {/* ── MODALS ── */}
       {showSettings && (
         <SettingsPanel settings={settings} onChange={settingChange}
-          eqBands={eqBands} onEqBand={handleEqBand} eqPreset={eqPreset} onEqPreset={handleEqPreset}
           onClose={()=>setShowSettings(false)}/>
       )}
 
@@ -1025,15 +962,3 @@ export default function App() {
     </>
   );
 }
-
-/* ─── EQ PRESETS export for reference ───────────────────── */
-const EQ_PRESETS = {
-  Flat:     [0,0,0,0,0,0,0,0,0,0],
-  Bass:     [6,5,4,2,0,0,0,0,0,0],
-  Treble:   [0,0,0,0,0,2,3,4,5,6],
-  Pop:      [-1,0,2,4,4,3,2,0,-1,-1],
-  Rock:     [4,3,1,0,-1,0,1,3,4,4],
-  Jazz:     [3,2,1,2,0,0,1,2,3,2],
-  Classical:[3,2,0,0,0,0,0,1,2,3],
-  Electronic:[4,3,0,0,2,3,3,2,1,4],
-};
