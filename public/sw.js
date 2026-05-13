@@ -1,83 +1,122 @@
 /* ─── My Music Player — Service Worker ─────────────────────
-   Uses vite-plugin-pwa's injectManifest strategy:
-   • self.__WB_MANIFEST is replaced at build time with the
-     list of all Vite-hashed assets (JS, CSS, HTML, fonts…)
-   • Audio files from Supabase get our custom Cache First +
-     range-request handler so seek works offline too.
+   vite-plugin-pwa injectManifest strategy:
+   - self.__WB_MANIFEST is replaced at build time with the
+     precache list of all Vite hashed assets
+   - Audio from Supabase gets Cache First + range support
+     so songs play and seek correctly offline
 ──────────────────────────────────────────────────────────── */
 
-import { precacheAndRoute, cleanupOutdatedCaches } from "workbox-precaching";
-import { registerRoute } from "workbox-routing";
-import { CacheFirst, NetworkFirst } from "workbox-strategies";
-import { CacheableResponsePlugin } from "workbox-cacheable-response";
-import { ExpirationPlugin } from "workbox-expiration";
-
+const SHELL_CACHE = "shell-v1";
 const AUDIO_CACHE = "audio-v1";
+const CDN_CACHE   = "cdn-v1";
 
-/* ── Precache all Vite build assets (hashed filenames) ── */
-cleanupOutdatedCaches();
-precacheAndRoute(self.__WB_MANIFEST || []);
-
-/* ── Skip waiting immediately when a new SW is found ── */
-self.addEventListener("install", () => self.skipWaiting());
-self.addEventListener("activate", (e) => {
-  e.waitUntil(self.clients.claim());
+/* ── Install: precache all Vite build assets ── */
+self.addEventListener("install", (event) => {
+  event.waitUntil(
+    caches.open(SHELL_CACHE).then((cache) => {
+      /* self.__WB_MANIFEST is injected by vite-plugin-pwa at build time */
+      const assets = (self.__WB_MANIFEST || []).map((entry) =>
+        typeof entry === "string" ? entry : entry.url
+      );
+      return cache.addAll(["/", "/index.html", ...assets]);
+    })
+  );
+  self.skipWaiting();
 });
 
-/* ── Audio files from Supabase → custom Cache First with range support ── */
-registerRoute(
-  ({ url }) =>
+/* ── Activate: remove old caches ── */
+self.addEventListener("activate", (event) => {
+  event.waitUntil(
+    caches.keys().then((keys) =>
+      Promise.all(
+        keys
+          .filter((k) => ![SHELL_CACHE, AUDIO_CACHE, CDN_CACHE].includes(k))
+          .map((k) => caches.delete(k))
+      )
+    ).then(() => self.clients.claim())
+  );
+});
+
+/* ── Fetch: route to the right strategy ── */
+self.addEventListener("fetch", (event) => {
+  const { request } = event;
+  const url = new URL(request.url);
+
+  /* 1. Supabase audio storage → Cache First with range support */
+  if (
     url.hostname.includes("supabase.co") &&
-    url.pathname.includes("/storage/"),
-  async ({ request }) => cacheFirstAudio(request)
-);
+    url.pathname.includes("/storage/")
+  ) {
+    event.respondWith(cacheFirstAudio(request));
+    return;
+  }
 
-/* ── Google Fonts → Cache First, 1 year ── */
-registerRoute(
-  ({ url }) =>
+  /* 2. Google Fonts + CDN scripts → Cache First */
+  if (
     url.hostname === "fonts.googleapis.com" ||
-    url.hostname === "fonts.gstatic.com",
-  new CacheFirst({
-    cacheName: "fonts-v1",
-    plugins: [
-      new CacheableResponsePlugin({ statuses: [0, 200] }),
-      new ExpirationPlugin({ maxEntries: 30, maxAgeSeconds: 60 * 60 * 24 * 365 }),
-    ],
-  })
-);
+    url.hostname === "fonts.gstatic.com" ||
+    url.hostname === "cdn.jsdelivr.net"
+  ) {
+    event.respondWith(cacheFirst(request, CDN_CACHE));
+    return;
+  }
 
-/* ── CDN scripts (supabase-js, etc.) → Cache First, 7 days ── */
-registerRoute(
-  ({ url }) => url.hostname === "cdn.jsdelivr.net",
-  new CacheFirst({
-    cacheName: "cdn-v1",
-    plugins: [
-      new CacheableResponsePlugin({ statuses: [0, 200] }),
-      new ExpirationPlugin({ maxEntries: 20, maxAgeSeconds: 60 * 60 * 24 * 7 }),
-    ],
-  })
-);
+  /* 3. Same-origin app shell → Cache First (covers hashed JS/CSS) */
+  if (url.origin === self.location.origin) {
+    event.respondWith(cacheFirst(request, SHELL_CACHE));
+    return;
+  }
 
-/* ─── Audio caching helpers ──────────────────────────────── */
+  /* 4. Everything else → Network with cache fallback */
+  event.respondWith(networkFirst(request));
+});
 
+/* ── Strategy: Cache First ── */
+async function cacheFirst(request, cacheName) {
+  const cached = await caches.match(request);
+  if (cached) return cached;
+  try {
+    const response = await fetch(request);
+    if (response.ok) {
+      const cache = await caches.open(cacheName);
+      cache.put(request, response.clone());
+    }
+    return response;
+  } catch {
+    return new Response("Offline — resource not cached", { status: 503 });
+  }
+}
+
+/* ── Strategy: Network First ── */
+async function networkFirst(request) {
+  try {
+    const response = await fetch(request);
+    if (response.ok) {
+      const cache = await caches.open(SHELL_CACHE);
+      cache.put(request, response.clone());
+    }
+    return response;
+  } catch {
+    const cached = await caches.match(request);
+    return cached || new Response("Offline", { status: 503 });
+  }
+}
+
+/* ── Audio: Cache First with byte-range support ── */
 async function cacheFirstAudio(request) {
-  const cache = await caches.open(AUDIO_CACHE);
+  const cache    = await caches.open(AUDIO_CACHE);
   const cacheKey = request.url;
+  const cached   = await cache.match(cacheKey);
 
-  /* Return cached full response, slicing for range requests */
-  const cached = await cache.match(cacheKey);
   if (cached) {
     const range = request.headers.get("range");
     return range ? buildRangeResponse(cached, range) : cached;
   }
 
-  /* Fetch the complete file (strip range header so we always
-     store a full copy — critical for offline seek to work)   */
+  /* Fetch full file (no range header) so we store a complete copy */
   try {
     const fullReq = new Request(request.url, {
-      method: "GET",
-      mode: "cors",
-      credentials: "omit",
+      method: "GET", mode: "cors", credentials: "omit",
     });
     const response = await fetch(fullReq);
     if (!response.ok && response.status !== 206) return response;
@@ -86,21 +125,23 @@ async function cacheFirstAudio(request) {
     const fullResponse = new Response(buffer, {
       status: 200,
       headers: {
-        "Content-Type":   response.headers.get("Content-Type")   || "audio/mpeg",
+        "Content-Type":   response.headers.get("Content-Type") || "audio/mpeg",
         "Content-Length": String(buffer.byteLength),
         "Accept-Ranges":  "bytes",
       },
     });
 
-    /* Store in cache */
+    /* Cache the full file */
     await cache.put(cacheKey, fullResponse.clone());
 
-    /* Notify clients this song is now cached */
+    /* Tell the app this song is now cached */
     const clients = await self.clients.matchAll();
-    const name = decodeURIComponent(request.url.split("/").pop().split("?")[0]);
+    const name = decodeURIComponent(
+      request.url.split("/").pop().split("?")[0]
+    );
     clients.forEach((c) => c.postMessage({ type: "SONG_CACHED", name }));
 
-    /* Respond to the original request (handle range if needed) */
+    /* Respond — handle range if the browser asked for one */
     const range = request.headers.get("range");
     return range ? buildRangeResponse(fullResponse, range) : fullResponse;
   } catch {
@@ -108,9 +149,10 @@ async function cacheFirstAudio(request) {
   }
 }
 
+/* Slice a cached full response into a 206 Partial Content response */
 async function buildRangeResponse(fullResponse, rangeHeader) {
-  const buffer     = await fullResponse.clone().arrayBuffer();
-  const total      = buffer.byteLength;
+  const buffer = await fullResponse.clone().arrayBuffer();
+  const total  = buffer.byteLength;
   const [, spec]   = rangeHeader.split("=");
   const [s, e]     = spec.split("-");
   const start      = parseInt(s, 10) || 0;
@@ -128,10 +170,9 @@ async function buildRangeResponse(fullResponse, rangeHeader) {
   });
 }
 
-/* ── Message: batch pre-cache songs sent from the app ── */
+/* ── Message: pre-cache a batch of songs from the app ── */
 self.addEventListener("message", (event) => {
   if (event.data?.type !== "CACHE_SONGS") return;
-
   event.waitUntil(
     (async () => {
       const cache = await caches.open(AUDIO_CACHE);
@@ -158,7 +199,7 @@ self.addEventListener("message", (event) => {
           clients.forEach((c) =>
             c.postMessage({ type: "SONG_CACHED", name: song.name })
           );
-        } catch { /* skip failed fetches */ }
+        } catch { /* skip */ }
       }
     })()
   );
