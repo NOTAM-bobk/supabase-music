@@ -1,4 +1,4 @@
-# Updomeing features:
+# upcomeing features:
 1. cleaner UI
 2. fix some bugs
 3.  add cloudlfare login to save settings and playlist
