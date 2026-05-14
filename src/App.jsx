@@ -5,7 +5,7 @@ import {
   MessageSquarePlus, RefreshCw, ChevronRight, Info, Download,
   Plus, Trash2, FolderPlus, Heart, Sliders, Moon, Check,
   MoreHorizontal, SortAsc, SortDesc, Home, Type, Upload,
-  FileMusic, Gauge, Clock, Keyboard, ListMusic
+  FileMusic, Gauge, Clock, Keyboard, AlertCircle, MonitorDown
 } from "lucide-react";
 
 /* ─── CONFIG ──────────────────────────────────────────────── */
@@ -67,6 +67,53 @@ function useIsMobile() {
   return isMobile;
 }
 
+/* Detect if device likely has a hardware keyboard */
+function useHasKeyboard() {
+  const [hasKb, setHasKb] = useState(true);
+  useEffect(() => {
+    const touch = navigator.maxTouchPoints > 1;
+    const coarse = window.matchMedia("(pointer: coarse)").matches;
+    setHasKb(!(touch && coarse));
+  }, []);
+  return hasKb;
+}
+
+/* ─── PWA INSTALL HOOK ───────────────────────────────────── */
+function usePWAInstall() {
+  const [prompt, setPrompt]       = useState(null);
+  const [installed, setInstalled] = useState(false);
+  const [platform, setPlatform]   = useState("unknown"); // "android" | "ios" | "desktop"
+
+  useEffect(() => {
+    // Detect platform for custom instructions
+    const ua = navigator.userAgent.toLowerCase();
+    if (/iphone|ipad|ipod/.test(ua))          setPlatform("ios");
+    else if (/android/.test(ua))              setPlatform("android");
+    else                                       setPlatform("desktop");
+
+    // Check if already installed
+    if (window.matchMedia("(display-mode: standalone)").matches) {
+      setInstalled(true); return;
+    }
+
+    const handler = (e) => { e.preventDefault(); setPrompt(e); };
+    window.addEventListener("beforeinstallprompt", handler);
+    window.addEventListener("appinstalled", () => { setInstalled(true); setPrompt(null); });
+    return () => window.removeEventListener("beforeinstallprompt", handler);
+  }, []);
+
+  const install = async () => {
+    if (!prompt) return false;
+    prompt.prompt();
+    const { outcome } = await prompt.userChoice;
+    if (outcome === "accepted") setInstalled(true);
+    setPrompt(null);
+    return outcome === "accepted";
+  };
+
+  return { prompt, installed, platform, install };
+}
+
 /* ─── VISUALIZER ──────────────────────────────────────────── */
 function Visualizer({ isPlaying, bars = 20, color = "#000", height = 56 }) {
   const canvasRef = useRef(null);
@@ -84,7 +131,7 @@ function Visualizer({ isPlaying, bars = 20, color = "#000", height = 56 }) {
       for (let i = 0; i < bars; i++) {
         ht.current[i] += (tg.current[i] - ht.current[i]) * 0.18;
         const h2 = ht.current[i] * c.height;
-        ctx.fillStyle = color; ctx.globalAlpha = 0.12 + ht.current[i] * 0.75;
+        ctx.fillStyle = color; ctx.globalAlpha = 0.15 + ht.current[i] * 0.7;
         ctx.beginPath(); ctx.roundRect(i * bw + 1.5, c.height - h2, bw - 3, h2, 3); ctx.fill();
       }
       ctx.globalAlpha = 1; rafRef.current = requestAnimationFrame(draw);
@@ -123,14 +170,14 @@ function Modal({ onClose, title, children, width = "min(560px,93vw)" }) {
 /* ─── KEYBOARD SHORTCUTS MODAL ───────────────────────────── */
 function KeyboardModal({ onClose }) {
   const shortcuts = [
-    ["Space",   "Play / Pause"],
-    ["←",       "Previous track (or restart)"],
-    ["→",       "Next track"],
-    ["S",       "Toggle shuffle"],
-    ["R",       "Cycle repeat mode"],
-    ["F",       "Toggle favorite"],
-    ["D",       "Download current song"],
-    ["K",       "Keyboard shortcuts (this panel)"],
+    ["Space", "Play / Pause"],
+    ["←",     "Previous track (or restart)"],
+    ["→",     "Next track"],
+    ["S",     "Toggle shuffle"],
+    ["R",     "Cycle repeat mode"],
+    ["F",     "Toggle favorite"],
+    ["D",     "Download current song"],
+    ["K",     "Keyboard shortcuts (this panel)"],
   ];
   return (
     <Modal onClose={onClose} title="Keyboard Shortcuts" width="min(420px,93vw)">
@@ -146,6 +193,128 @@ function KeyboardModal({ onClose }) {
   );
 }
 
+/* ─── PWA INSTALL MODAL ──────────────────────────────────── */
+function InstallModal({ onClose, pwa }) {
+  const { prompt, installed, platform, install } = pwa;
+  const [installing, setInstalling] = useState(false);
+
+  const handleInstall = async () => {
+    setInstalling(true);
+    await install();
+    setInstalling(false);
+    onClose();
+  };
+
+  if (installed) {
+    return (
+      <Modal onClose={onClose} title="Already Installed" width="min(380px,93vw)">
+        <div style={{ textAlign: "center", padding: "12px 0" }}>
+          <div style={{ fontSize: 40, marginBottom: 12 }}>✅</div>
+          <div style={{ fontSize: 15, fontWeight: 800, marginBottom: 8 }}>App is installed!</div>
+          <div style={{ fontSize: 13, color: "#777", lineHeight: 1.6, marginBottom: 16 }}>
+            My Music is already installed on this device. Find it in your home screen or app drawer.
+          </div>
+          <button onClick={onClose} className="vbtn vbtn-primary" style={{ justifyContent: "center", padding: "11px 24px" }}>Close</button>
+        </div>
+      </Modal>
+    );
+  }
+
+  return (
+    <Modal onClose={onClose} title="Install App" width="min(440px,93vw)">
+      <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+        {/* App preview card */}
+        <div style={{ background: "linear-gradient(135deg,rgba(0,0,0,0.04),rgba(0,0,0,0.02))", borderRadius: 16, padding: "20px", border: "1.5px solid rgba(0,0,0,0.07)", display: "flex", alignItems: "center", gap: 16 }}>
+          <div style={{ width: 56, height: 56, borderRadius: 14, background: "#000", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, boxShadow: "0 4px 16px rgba(0,0,0,0.2)" }}>
+            <Music size={26} color="#fff" />
+          </div>
+          <div>
+            <div style={{ fontSize: 16, fontWeight: 800, color: "#000", marginBottom: 3 }}>My Music</div>
+            <div style={{ fontSize: 12, color: "#888" }}>Stream & listen offline</div>
+          </div>
+        </div>
+
+        {/* Native install prompt (Chrome/Edge/Android) */}
+        {prompt && (
+          <div>
+            <div style={{ fontSize: 13, color: "#555", lineHeight: 1.6, marginBottom: 12 }}>
+              Install My Music as an app for the best experience — works offline, opens instantly, and lives on your home screen or desktop.
+            </div>
+            <button onClick={handleInstall} className="vbtn vbtn-primary" disabled={installing}
+              style={{ width: "100%", justifyContent: "center", gap: 8, padding: "13px", borderRadius: 12, fontSize: 14 }}>
+              <MonitorDown size={16} />
+              {installing ? "Installing…" : "Install Now"}
+            </button>
+          </div>
+        )}
+
+        {/* iOS — no beforeinstallprompt, must show manual instructions */}
+        {!prompt && platform === "ios" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <div style={{ fontSize: 13, color: "#555", lineHeight: 1.6 }}>
+              To install on iOS, use Safari and follow these steps:
+            </div>
+            {[
+              ["1", "Tap the", "Share", "button at the bottom of Safari"],
+              ["2", "Scroll down and tap", "Add to Home Screen", ""],
+              ["3", "Tap", "Add", "in the top right corner"],
+            ].map(([n, a, b, c]) => (
+              <div key={n} style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "10px 12px", background: "rgba(0,0,0,0.03)", borderRadius: 12, border: "1.5px solid rgba(0,0,0,0.07)" }}>
+                <div style={{ width: 22, height: 22, borderRadius: "50%", background: "#000", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 800, flexShrink: 0 }}>{n}</div>
+                <div style={{ fontSize: 13, color: "#444", lineHeight: 1.5 }}>
+                  {a} <strong>{b}</strong> {c}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Desktop (no prompt available but also not iOS) */}
+        {!prompt && platform === "desktop" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <div style={{ fontSize: 13, color: "#555", lineHeight: 1.6 }}>
+              To install on desktop, use Chrome or Edge and look for the install icon in the address bar (⊕), or follow these steps:
+            </div>
+            {[
+              ["1", "Open this site in", "Chrome or Edge", ""],
+              ["2", "Click the", "⊕ Install", "icon in the right side of the address bar"],
+              ["3", "Click", "Install", "in the popup"],
+            ].map(([n, a, b, c]) => (
+              <div key={n} style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "10px 12px", background: "rgba(0,0,0,0.03)", borderRadius: 12, border: "1.5px solid rgba(0,0,0,0.07)" }}>
+                <div style={{ width: 22, height: 22, borderRadius: "50%", background: "#000", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 800, flexShrink: 0 }}>{n}</div>
+                <div style={{ fontSize: 13, color: "#444", lineHeight: 1.5 }}>{a} <strong>{b}</strong> {c}</div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Android without prompt */}
+        {!prompt && platform === "android" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <div style={{ fontSize: 13, color: "#555", lineHeight: 1.6 }}>
+              To install on Android, use Chrome and tap the three-dot menu:
+            </div>
+            {[
+              ["1", "Tap the", "⋮ menu", "in the top right"],
+              ["2", "Tap", "Add to Home Screen", "or Install App"],
+              ["3", "Tap", "Add", "to confirm"],
+            ].map(([n, a, b, c]) => (
+              <div key={n} style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "10px 12px", background: "rgba(0,0,0,0.03)", borderRadius: 12, border: "1.5px solid rgba(0,0,0,0.07)" }}>
+                <div style={{ width: 22, height: 22, borderRadius: "50%", background: "#000", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 800, flexShrink: 0 }}>{n}</div>
+                <div style={{ fontSize: 13, color: "#444", lineHeight: 1.5 }}>{a} <strong>{b}</strong> {c}</div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div style={{ fontSize: 11, color: "#bbb", lineHeight: 1.5, textAlign: "center", marginTop: 4 }}>
+          Works offline once installed. No app store required.
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
 /* ─── REQUEST / UPLOAD MODAL ─────────────────────────────── */
 function RequestUploadModal({ onClose, supabase, onRefresh }) {
   const [mode,         setMode]         = useState(null);
@@ -156,18 +325,18 @@ function RequestUploadModal({ onClose, supabase, onRefresh }) {
   const [done,         setDone]         = useState(false);
   const fileRef = useRef(null);
 
-  const handleFiles = (e) => {
-    const selected = Array.from(e.target.files).filter(f => f.type === "audio/mpeg" || f.name.toLowerCase().endsWith(".mp3"));
-    setFiles(selected);
-    setUploadStatus(selected.map(f => ({ name: f.name, progress: 0, done: false, error: null })));
+  const addFiles = (selected) => {
+    const mp3s = Array.from(selected).filter(f => f.type === "audio/mpeg" || f.name.toLowerCase().endsWith(".mp3"));
+    setFiles(mp3s);
+    setUploadStatus(mp3s.map(f => ({ name: f.name, progress: 0, done: false, error: null })));
   };
 
   const handleUpload = async () => {
     if (!folderName.trim()) return alert("Please enter a folder name.");
-    if (!files.length) return alert("Please select at least one MP3 file.");
-    if (!supabase) return alert("Not connected.");
+    if (!files.length)       return alert("Please select at least one MP3 file.");
+    if (!supabase)           return alert("Not connected.");
     setUploading(true);
-    const folder = folderName.trim().replace(/[^a-zA-Z0-9_\- ]/g, "_");
+    const folder  = folderName.trim().replace(/[^a-zA-Z0-9_\- ]/g, "_");
     const results = [...uploadStatus];
     for (let i = 0; i < files.length; i++) {
       const file = files[i]; const path = `${folder}/${file.name}`;
@@ -195,7 +364,7 @@ function RequestUploadModal({ onClose, supabase, onRefresh }) {
   if (mode === "request") { window.open(REQUEST_URL, "_blank"); onClose(); return null; }
 
   return (
-    <Modal onClose={onClose} title="Request / Upload" width="min(480px,93vw)">
+    <Modal onClose={onClose} title="Request / Upload" width="min(500px,93vw)">
       {mode === null && (
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           <p style={{ fontSize: 13, color: "#777", lineHeight: 1.6, marginBottom: 4 }}>What would you like to do?</p>
@@ -213,31 +382,41 @@ function RequestUploadModal({ onClose, supabase, onRefresh }) {
           ))}
         </div>
       )}
+
       {mode === "upload" && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
           {!done ? (
             <>
+              {/* ── DISCLAIMER ── */}
+              <div style={{ display: "flex", gap: 10, background: "rgba(230,115,0,0.07)", border: "1.5px solid rgba(230,115,0,0.22)", borderRadius: 12, padding: "12px 14px" }}>
+                <AlertCircle size={16} color="#e67300" style={{ flexShrink: 0, marginTop: 1 }} />
+                <div style={{ fontSize: 12, color: "#994d00", lineHeight: 1.6 }}>
+                  <strong>File name rules:</strong> Only use English letters (A–Z, a–z), numbers (0–9), spaces, hyphens (-), and underscores (_). No special characters, no emojis, no accented letters. Files with invalid names will be renamed automatically during upload.
+                </div>
+              </div>
+
               <div>
                 <label style={{ fontSize: 11, fontWeight: 700, color: "#aaa", display: "block", marginBottom: 7, letterSpacing: "0.06em", textTransform: "uppercase" }}>Folder name</label>
                 <input type="text" value={folderName} onChange={e => setFolderName(e.target.value)} placeholder="e.g. Summer Mix 2025" disabled={uploading} style={{ fontFamily: "inherit" }} />
+                {folderName && /[^a-zA-Z0-9_\- ]/.test(folderName) && (
+                  <div style={{ fontSize: 11, color: "#e67300", marginTop: 5 }}>⚠ Invalid characters detected — they'll be replaced with underscores.</div>
+                )}
               </div>
+
               <div>
-                <label style={{ fontSize: 11, fontWeight: 700, color: "#aaa", display: "block", marginBottom: 7, letterSpacing: "0.06em", textTransform: "uppercase" }}>MP3 Files only</label>
+                <label style={{ fontSize: 11, fontWeight: 700, color: "#aaa", display: "block", marginBottom: 7, letterSpacing: "0.06em", textTransform: "uppercase" }}>MP3 files only</label>
                 <div onClick={() => !uploading && fileRef.current?.click()}
                   style={{ border: "2px dashed rgba(0,0,0,0.12)", borderRadius: 14, padding: "22px 16px", textAlign: "center", cursor: uploading ? "default" : "pointer", background: "rgba(0,0,0,0.02)", transition: "border-color 0.13s" }}
                   onDragOver={e => { e.preventDefault(); e.currentTarget.style.borderColor = "#000"; }}
                   onDragLeave={e => e.currentTarget.style.borderColor = "rgba(0,0,0,0.12)"}
-                  onDrop={e => {
-                    e.preventDefault(); e.currentTarget.style.borderColor = "rgba(0,0,0,0.12)";
-                    const dropped = Array.from(e.dataTransfer.files).filter(f => f.type === "audio/mpeg" || f.name.toLowerCase().endsWith(".mp3"));
-                    setFiles(dropped); setUploadStatus(dropped.map(f => ({ name: f.name, progress: 0, done: false, error: null })));
-                  }}>
+                  onDrop={e => { e.preventDefault(); e.currentTarget.style.borderColor = "rgba(0,0,0,0.12)"; addFiles(e.dataTransfer.files); }}>
                   <FileMusic size={26} color="#ccc" style={{ marginBottom: 8 }} />
                   <div style={{ fontSize: 13, fontWeight: 700, color: "#999" }}>{files.length > 0 ? `${files.length} file(s) selected` : "Click or drag & drop .mp3 files"}</div>
-                  <div style={{ fontSize: 11, color: "#bbb", marginTop: 4 }}>Only .mp3 files are accepted</div>
+                  <div style={{ fontSize: 11, color: "#bbb", marginTop: 4 }}>Only .mp3 files accepted</div>
                 </div>
-                <input ref={fileRef} type="file" accept=".mp3,audio/mpeg" multiple onChange={handleFiles} style={{ display: "none" }} />
+                <input ref={fileRef} type="file" accept=".mp3,audio/mpeg" multiple onChange={e => addFiles(e.target.files)} style={{ display: "none" }} />
               </div>
+
               {uploadStatus.length > 0 && (
                 <div style={{ display: "flex", flexDirection: "column", gap: 7, maxHeight: 200, overflowY: "auto" }}>
                   {uploadStatus.map((s, i) => (
@@ -253,6 +432,7 @@ function RequestUploadModal({ onClose, supabase, onRefresh }) {
                   ))}
                 </div>
               )}
+
               <div style={{ display: "flex", gap: 8 }}>
                 <button onClick={() => setMode(null)} className="vbtn vbtn-ghost" style={{ flex: 1, justifyContent: "center" }} disabled={uploading}>Back</button>
                 <button onClick={handleUpload} className="vbtn vbtn-primary" style={{ flex: 2, justifyContent: "center", gap: 7, padding: "12px", borderRadius: 12, fontSize: 13 }} disabled={uploading || !files.length || !folderName.trim()}>
@@ -264,7 +444,7 @@ function RequestUploadModal({ onClose, supabase, onRefresh }) {
             <div style={{ textAlign: "center", padding: "16px 0" }}>
               <div style={{ fontSize: 36, marginBottom: 12 }}>✅</div>
               <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 6 }}>Upload complete!</div>
-              <div style={{ fontSize: 13, color: "#888", marginBottom: 20 }}>{uploadStatus.filter(s => s.done).length} of {uploadStatus.length} file(s) uploaded to <strong>/{folderName}</strong></div>
+              <div style={{ fontSize: 13, color: "#888", marginBottom: 20 }}>{uploadStatus.filter(s => s.done).length} of {uploadStatus.length} file(s) uploaded to <strong>/{folderName.replace(/[^a-zA-Z0-9_\- ]/g, "_")}</strong></div>
               {uploadStatus.some(s => s.error) && (
                 <div style={{ background: "rgba(231,76,60,0.07)", border: "1.5px solid rgba(231,76,60,0.2)", borderRadius: 10, padding: "10px 14px", marginBottom: 16, fontSize: 12, color: "#c0392b" }}>
                   {uploadStatus.filter(s => s.error).map(s => <div key={s.name}>⚠ {s.name}: {s.error}</div>)}
@@ -366,6 +546,7 @@ function SettingsPanel({ settings, onChange, onClose }) {
           </button>
         ))}
       </div>
+
       {tab === "playback" && (
         <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
           {[
@@ -381,9 +562,7 @@ function SettingsPanel({ settings, onChange, onClose }) {
               {SPEEDS.map(s => (
                 <button key={s} onClick={() => onChange("playbackSpeed", s)}
                   className={settings.playbackSpeed === s ? "vbtn vbtn-primary" : "vbtn vbtn-ghost"}
-                  style={{ fontSize: 11, padding: "4px 9px", borderRadius: 20 }}>
-                  {s}×
-                </button>
+                  style={{ fontSize: 11, padding: "4px 9px", borderRadius: 20 }}>{s}×</button>
               ))}
             </div>
           </SRow>
@@ -392,20 +571,19 @@ function SettingsPanel({ settings, onChange, onClose }) {
               {[0, 15, 30, 45, 60].map(m => (
                 <button key={m} onClick={() => onChange("sleepMins", m)}
                   className={settings.sleepMins === m ? "vbtn vbtn-primary" : "vbtn vbtn-ghost"}
-                  style={{ fontSize: 11, padding: "4px 9px" }}>
-                  {m === 0 ? "Off" : `${m}m`}
-                </button>
+                  style={{ fontSize: 11, padding: "4px 9px" }}>{m === 0 ? "Off" : `${m}m`}</button>
               ))}
             </div>
           </SRow>
         </div>
       )}
+
       {tab === "library" && (
         <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
           {[
-            { key: "foldersOnly",   label: "Folders only on home",  sub: "Show only folders at the root level" },
-            { key: "showTrackNums", label: "Show track numbers",    sub: "Display index numbers in the track list" },
-            { key: "compactRows",   label: "Compact track rows",    sub: "Smaller row height to show more tracks" },
+            { key: "foldersOnly",   label: "Folders only on home", sub: "Show only folders at the root level" },
+            { key: "showTrackNums", label: "Show track numbers",   sub: "Display index numbers in the track list" },
+            { key: "compactRows",   label: "Compact track rows",   sub: "Smaller row height to show more tracks" },
           ].map(({ key, label, sub }) => (
             <SRow key={key} label={label} sub={sub}><Toggle value={settings[key]} onChange={v => onChange(key, v)} accent={settings.accent} /></SRow>
           ))}
@@ -414,14 +592,13 @@ function SettingsPanel({ settings, onChange, onClose }) {
               {[{ val: "asc", label: "A → Z", icon: <SortAsc size={11} /> }, { val: "desc", label: "Z → A", icon: <SortDesc size={11} /> }].map(({ val, label, icon }) => (
                 <button key={val} onClick={() => onChange("sortOrder", val)}
                   className={settings.sortOrder === val ? "vbtn vbtn-primary" : "vbtn vbtn-ghost"}
-                  style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11 }}>
-                  {icon}{label}
-                </button>
+                  style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11 }}>{icon}{label}</button>
               ))}
             </div>
           </SRow>
         </div>
       )}
+
       {tab === "display" && (
         <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
           {[
@@ -443,6 +620,7 @@ function SettingsPanel({ settings, onChange, onClose }) {
           </SRow>
         </div>
       )}
+
       {tab === "fonts" && (
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           <p style={{ fontSize: 12, color: "#aaa", marginBottom: 4, lineHeight: 1.6 }}>Choose the font used throughout the app.</p>
@@ -456,6 +634,7 @@ function SettingsPanel({ settings, onChange, onClose }) {
           </div>
         </div>
       )}
+
       {tab === "info" && (
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           {[
@@ -498,7 +677,6 @@ function Toggle({ value, onChange, accent = "#000" }) {
   );
 }
 
-/* ─── SPEED BADGE ────────────────────────────────────────── */
 function SpeedBadge({ speed, accent }) {
   if (!speed || speed === 1) return null;
   return (
@@ -549,8 +727,10 @@ function TrackRow({ item, idx, active, isPlaying, fav, dur, settings, accent, ro
 
 /* ─── MAIN APP ───────────────────────────────────────────── */
 export default function App() {
-  const supabase = useSupabase();
-  const isMobile = useIsMobile();
+  const supabase  = useSupabase();
+  const isMobile  = useIsMobile();
+  const hasKb     = useHasKeyboard();
+  const pwa       = usePWAInstall();
 
   const [items,            setItems]            = useState([]);
   const [currentPath,      setCurrentPath]      = useState("");
@@ -569,6 +749,7 @@ export default function App() {
   const [showSidebar,      setShowSidebar]      = useState(false);
   const [showReqUpload,    setShowReqUpload]    = useState(false);
   const [showKeyboard,     setShowKeyboard]     = useState(false);
+  const [showInstall,      setShowInstall]      = useState(false);
   const [activePlaylistId, setActivePlaylistId] = useState(null);
   const [playlists,        setPlaylists]        = useState(() => loadLocal("playlists", []));
   const [favorites,        setFavorites]        = useState(() => loadLocal("favorites", []));
@@ -581,11 +762,23 @@ export default function App() {
   const [dlProgress,       setDlProgress]       = useState({});
   const [toast,            setToast]            = useState(null);
 
+  /* ── Default settings — changed per request ── */
   const [settings, setSettings] = useState(() => loadLocal("settings", {
-    autoplay: true, crossfade: false, showDurations: true, showSizes: false,
-    visualizer: true, compactRows: false, showTrackNums: true,
-    sleepMins: 0, accent: "#000000", foldersOnly: false, sortOrder: "asc",
-    accentBar: false, showWaveform: false, fontId: "syne", playbackSpeed: 1,
+    autoplay:      true,
+    crossfade:     false,
+    showDurations: true,
+    showSizes:     false,
+    visualizer:    true,
+    compactRows:   true,       // compact on by default
+    showTrackNums: false,      // track numbers off by default
+    sleepMins:     0,
+    accent:        "#c0392b",  // red by default
+    foldersOnly:   false,
+    sortOrder:     "asc",
+    accentBar:     true,       // accent player bar on by default
+    showWaveform:  false,
+    fontId:        "fraunces", // Fraunces by default
+    playbackSpeed: 1,
   }));
 
   const sleepRef   = useRef(null);
@@ -596,17 +789,15 @@ export default function App() {
   const durLoading = useRef(false);
   const toastRef   = useRef(null);
 
-  const activeFont = FONTS.find(f => f.id === settings.fontId) || FONTS[1];
-  const accent     = settings.accent || "#000000";
+  const activeFont = FONTS.find(f => f.id === settings.fontId) || FONTS.find(f => f.id === "fraunces");
+  const accent     = settings.accent || "#c0392b";
 
-  /* ── Toast ── */
   const showToast = useCallback((msg, type = "info") => {
     setToast({ msg, type });
     clearTimeout(toastRef.current);
     toastRef.current = setTimeout(() => setToast(null), 2600);
   }, []);
 
-  /* ── Font loader ── */
   useEffect(() => {
     const id = "dynamic-font-link";
     let el = document.getElementById(id);
@@ -616,7 +807,6 @@ export default function App() {
       : "https://cdn.jsdelivr.net/npm/opendyslexic@latest/opendyslexic.min.css";
   }, [activeFont]);
 
-  /* ── Playback speed sync ── */
   useEffect(() => {
     if (audioRef.current) audioRef.current.playbackRate = settings.playbackSpeed || 1;
   }, [settings.playbackSpeed]);
@@ -678,7 +868,6 @@ export default function App() {
 
   useEffect(() => { fetchItems(currentPath); }, [supabase, currentPath, fetchItems]);
 
-  /* ── Audio playback ── */
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio || !currentSong?.url) return;
@@ -725,14 +914,9 @@ export default function App() {
     setCurrentSong(q[(ci - 1 + q.length) % q.length]); setIsPlaying(true);
   }, [currentTime, getQueue, currentSong]);
 
-  /* ── Keyboard shortcuts ── */
   const isFav = useCallback((song) => favorites.some(s => s?.name === song?.name), [favorites]);
-
   const toggleFav = useCallback((song) => {
-    setFavorites(prev => {
-      const exists = prev.some(s => s.name === song.name);
-      return exists ? prev.filter(s => s.name !== song.name) : [...prev, song];
-    });
+    setFavorites(prev => prev.some(s => s.name === song.name) ? prev.filter(s => s.name !== song.name) : [...prev, song]);
   }, []);
 
   useEffect(() => {
@@ -741,23 +925,19 @@ export default function App() {
       if (e.code === "Space")      { e.preventDefault(); setIsPlaying(p => !p); }
       if (e.code === "ArrowRight") handleNext();
       if (e.code === "ArrowLeft")  handlePrev();
-      if (e.key === "s" || e.key === "S") { setShuffle(p => !p); }
+      if (e.key === "s" || e.key === "S") setShuffle(p => !p);
       if (e.key === "r" || e.key === "R") setRepeat(r => r === REPEAT_M.NONE ? REPEAT_M.ALL : r === REPEAT_M.ALL ? REPEAT_M.ONE : REPEAT_M.NONE);
       if (e.key === "k" || e.key === "K") setShowKeyboard(p => !p);
-      if ((e.key === "f" || e.key === "F") && currentSong) {
-        const was = favorites.some(s => s?.name === currentSong.name);
-        toggleFav(currentSong);
-        showToast(was ? "Removed from favorites" : "Added to favorites ♥", "success");
-      }
+      if ((e.key === "f" || e.key === "F") && currentSong) { const was = isFav(currentSong); toggleFav(currentSong); showToast(was ? "Removed ♥" : "Added to favorites ♥", "success"); }
       if ((e.key === "d" || e.key === "D") && currentSong) downloadSong(currentSong);
     };
     window.addEventListener("keydown", fn);
     return () => window.removeEventListener("keydown", fn);
-  }, [handleNext, handlePrev, currentSong, favorites, toggleFav, showToast]);
+  }, [handleNext, handlePrev, currentSong, isFav, toggleFav, showToast]);
 
   const handleSeek = useCallback((clientX) => {
     if (!seekBarRef.current || !duration) return;
-    const r = seekBarRef.current.getBoundingClientRect();
+    const r   = seekBarRef.current.getBoundingClientRect();
     const pct = Math.max(0, Math.min(1, (clientX - r.left) / r.width));
     if (audioRef.current) audioRef.current.currentTime = pct * duration;
   }, [duration]);
@@ -769,22 +949,12 @@ export default function App() {
     showToast("Playlist created!", "success");
   };
   const addToPlaylist = (song, plId) => {
-    setPlaylists(prev => prev.map(p => {
-      if (p.id !== plId) return p;
-      if (p.songs.some(s => s.name === song.name)) return p;
-      return { ...p, songs: [...p.songs, song] };
-    }));
+    setPlaylists(prev => prev.map(p => { if (p.id !== plId) return p; if (p.songs.some(s => s.name === song.name)) return p; return { ...p, songs: [...p.songs, song] }; }));
     showToast("Added to playlist", "success");
   };
-  const removeFromPlaylist = (songName, plId) => setPlaylists(prev => prev.map(p =>
-    p.id === plId ? { ...p, songs: p.songs.filter(s => s.name !== songName) } : p
-  ));
-  const deletePlaylist = (id) => {
-    setPlaylists(prev => prev.filter(p => p.id !== id));
-    if (activePlaylistId === id) { setView("browser"); setActivePlaylistId(null); }
-  };
+  const removeFromPlaylist = (songName, plId) => setPlaylists(prev => prev.map(p => p.id === plId ? { ...p, songs: p.songs.filter(s => s.name !== songName) } : p));
+  const deletePlaylist = (id) => { setPlaylists(prev => prev.filter(p => p.id !== id)); if (activePlaylistId === id) { setView("browser"); setActivePlaylistId(null); } };
 
-  /* ── Download with progress ── */
   const downloadSong = async (song) => {
     setDlProgress(p => ({ ...p, [song.name]: 0 }));
     showToast("Starting download…", "info");
@@ -848,12 +1018,11 @@ export default function App() {
           {item.icon}
           <span style={{ flex: 1 }}>{item.label}</span>
           {(item.count ?? 0) > 0 && (
-            <span style={{ fontSize: 10, fontWeight: 800, borderRadius: 20, padding: "1px 7px", background: view === item.id && !activePlaylistId ? "rgba(255,255,255,0.22)" : "rgba(0,0,0,0.07)", flexShrink: 0 }}>
-              {item.count}
-            </span>
+            <span style={{ fontSize: 10, fontWeight: 800, borderRadius: 20, padding: "1px 7px", background: view === item.id && !activePlaylistId ? "rgba(255,255,255,0.22)" : "rgba(0,0,0,0.07)", flexShrink: 0 }}>{item.count}</span>
           )}
         </button>
       ))}
+
       <div style={{ marginTop: 14, paddingTop: 12, borderTop: "1px solid rgba(0,0,0,0.07)" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 4px", marginBottom: 6 }}>
           <span style={{ fontSize: 9, fontWeight: 800, color: "#bbb", letterSpacing: "0.1em", textTransform: "uppercase" }}>Playlists</span>
@@ -880,9 +1049,17 @@ export default function App() {
         ))}
         {playlists.length === 0 && <div style={{ fontSize: 11, color: "#ccc", padding: "4px 12px", fontStyle: "italic" }}>No playlists yet</div>}
       </div>
+
       {history.length > 0 && (
         <button onClick={() => { setHistory([]); showToast("History cleared", "info"); }} className="vbtn vbtn-ghost" style={{ width: "100%", justifyContent: "center", gap: 5, fontSize: 11, marginTop: 14, padding: "6px", borderRadius: 8 }}>
           <Clock size={10} /> Clear History
+        </button>
+      )}
+
+      {/* Install app button in sidebar */}
+      {!pwa.installed && (
+        <button onClick={() => setShowInstall(true)} className="vbtn vbtn-ghost" style={{ width: "100%", justifyContent: "center", gap: 5, fontSize: 11, marginTop: 8, padding: "6px", borderRadius: 8 }}>
+          <MonitorDown size={12} /> Install App
         </button>
       )}
     </>
@@ -897,10 +1074,10 @@ export default function App() {
         body{
           background:#eceae3;
           background-image:
-            radial-gradient(ellipse 80% 60% at 5% 95%, rgba(255,218,80,0.13) 0%, transparent 55%),
-            radial-gradient(ellipse 55% 45% at 95% 5%,  rgba(140,195,255,0.13) 0%, transparent 55%),
-            radial-gradient(ellipse 35% 25% at 50% 50%, rgba(255,255,255,0.3) 0%, transparent 70%);
-          color:#1a1a1a; font-family:${activeFont.stack};
+            radial-gradient(ellipse 80% 60% at 5% 95%,rgba(255,218,80,0.13) 0%,transparent 55%),
+            radial-gradient(ellipse 55% 45% at 95% 5%,rgba(140,195,255,0.13) 0%,transparent 55%),
+            radial-gradient(ellipse 35% 25% at 50% 50%,rgba(255,255,255,0.3) 0%,transparent 70%);
+          color:#1a1a1a;font-family:${activeFont.stack};
         }
         ::-webkit-scrollbar{width:4px}
         ::-webkit-scrollbar-track{background:transparent}
@@ -916,52 +1093,20 @@ export default function App() {
         @keyframes popIn{from{opacity:0;transform:scale(0.88) translateY(-8px)}to{opacity:1;transform:none}}
         @keyframes shimmer{from{background-position:-200% 0}to{background-position:200% 0}}
 
-        /* ── Vercel button system ── */
-        .vbtn{
-          display:inline-flex;align-items:center;justify-content:center;
-          font-family:inherit;font-size:12px;font-weight:700;
-          padding:6px 12px;border-radius:8px;cursor:pointer;
-          border:1px solid transparent;transition:all 0.13s;gap:5px;
-          white-space:nowrap;user-select:none;-webkit-tap-highlight-color:transparent;
-          letter-spacing:-0.01em;
-        }
+        .vbtn{display:inline-flex;align-items:center;justify-content:center;font-family:inherit;font-size:12px;font-weight:700;padding:6px 12px;border-radius:8px;cursor:pointer;border:1px solid transparent;transition:all 0.13s;gap:5px;white-space:nowrap;user-select:none;-webkit-tap-highlight-color:transparent;letter-spacing:-0.01em}
         .vbtn:disabled{opacity:0.45;cursor:not-allowed;pointer-events:none}
-        .vbtn-primary{
-          background:#000;color:#fff;border-color:#000;
-          box-shadow:0 0 0 1px rgba(0,0,0,0.08),0 1px 3px rgba(0,0,0,0.2),0 2px 0 #000 inset,2px 2px 0 #000
-        }
-        .vbtn-primary:hover{background:#111;box-shadow:0 0 0 1px rgba(0,0,0,0.08),0 2px 8px rgba(0,0,0,0.22),0 2px 0 #000 inset,3px 3px 0 #000}
-        .vbtn-primary:active{transform:translate(1px,1px);box-shadow:0 0 0 1px rgba(0,0,0,0.08),0 1px 2px rgba(0,0,0,0.14),1px 1px 0 #000}
-        .vbtn-ghost{
-          background:rgba(255,255,255,0.62);color:#444;
-          border-color:rgba(0,0,0,0.09);
-          box-shadow:0 0 0 1px rgba(0,0,0,0.03),0 1px 3px rgba(0,0,0,0.07),1px 1px 0 rgba(0,0,0,0.06);
-          backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);
-        }
-        .vbtn-ghost:hover{background:rgba(255,255,255,0.92);color:#000;border-color:rgba(0,0,0,0.16);box-shadow:0 0 0 1px rgba(0,0,0,0.04),0 2px 8px rgba(0,0,0,0.09),2px 2px 0 rgba(0,0,0,0.07)}
+        .vbtn-primary{background:#000;color:#fff;border-color:#000;box-shadow:0 0 0 1px rgba(0,0,0,0.08),0 1px 3px rgba(0,0,0,0.2),2px 2px 0 #000}
+        .vbtn-primary:hover{background:#111;box-shadow:0 0 0 1px rgba(0,0,0,0.08),0 2px 8px rgba(0,0,0,0.22),3px 3px 0 #000}
+        .vbtn-primary:active{transform:translate(1px,1px);box-shadow:0 0 0 1px rgba(0,0,0,0.08),1px 1px 0 #000}
+        .vbtn-ghost{background:rgba(255,255,255,0.62);color:#444;border-color:rgba(0,0,0,0.09);box-shadow:0 0 0 1px rgba(0,0,0,0.03),0 1px 3px rgba(0,0,0,0.07),1px 1px 0 rgba(0,0,0,0.06);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px)}
+        .vbtn-ghost:hover{background:rgba(255,255,255,0.92);color:#000;border-color:rgba(0,0,0,0.16)}
         .vbtn-ghost:active{transform:translate(1px,1px)}
-        .vbtn-accent{
-          background:${accent};color:#fff;border-color:${accent};
-          box-shadow:0 0 0 1px rgba(0,0,0,0.06),0 1px 4px ${accent}44,2px 2px 0 ${accent}99
-        }
-        .vbtn-accent:hover{opacity:0.86;box-shadow:0 0 0 1px rgba(0,0,0,0.06),0 3px 10px ${accent}44,3px 3px 0 ${accent}99}
+        .vbtn-accent{background:${accent};color:#fff;border-color:${accent};box-shadow:0 0 0 1px rgba(0,0,0,0.06),0 1px 4px ${accent}44,2px 2px 0 ${accent}99}
+        .vbtn-accent:hover{opacity:0.86}
 
-        /* ── Glass ── */
-        .glass{
-          background:rgba(255,255,255,0.48);
-          backdrop-filter:blur(28px);-webkit-backdrop-filter:blur(28px);
-          border:1px solid rgba(255,255,255,0.78);
-          box-shadow:0 1px 0 rgba(255,255,255,0.6) inset;
-        }
+        .glass{background:rgba(255,255,255,0.48);backdrop-filter:blur(28px);-webkit-backdrop-filter:blur(28px);border:1px solid rgba(255,255,255,0.78);box-shadow:0 1px 0 rgba(255,255,255,0.6) inset}
 
-        /* ── Track rows ── */
-        .track-row{
-          display:flex;align-items:center;gap:10px;padding:0 12px;cursor:pointer;
-          border-radius:12px;margin:2px 8px;border:1px solid transparent;
-          transition:background 0.13s,border-color 0.13s,transform 0.13s,box-shadow 0.13s;
-          animation:slideIn 0.22s ease both;
-          position:relative;-webkit-tap-highlight-color:transparent;
-        }
+        .track-row{display:flex;align-items:center;gap:10px;padding:0 12px;cursor:pointer;border-radius:12px;margin:2px 8px;border:1px solid transparent;transition:background 0.13s,border-color 0.13s,transform 0.13s,box-shadow 0.13s;animation:slideIn 0.22s ease both;position:relative;-webkit-tap-highlight-color:transparent}
         .track-row:hover{background:rgba(255,255,255,0.7);border-color:rgba(0,0,0,0.07)}
         @media(hover:hover){
           .track-row:hover{transform:translateX(2px)}
@@ -970,107 +1115,49 @@ export default function App() {
           .track-row:hover .dot-menu-btn{opacity:1}
         }
         @media(hover:none){.track-row .dot-menu-btn{opacity:1}}
-        .track-row.playing{
-          background:rgba(255,255,255,0.9);
-          border-color:rgba(0,0,0,0.14);
-          box-shadow:0 0 0 1px rgba(0,0,0,0.03),0 2px 12px rgba(0,0,0,0.08),3px 3px 0 #000;
-          transform:none;
-        }
+        .track-row.playing{background:rgba(255,255,255,0.9);border-color:rgba(0,0,0,0.14);box-shadow:0 0 0 1px rgba(0,0,0,0.03),0 2px 12px rgba(0,0,0,0.08),3px 3px 0 #000;transform:none}
 
         .icon-btn{background:none;border:none;cursor:pointer;color:#bbb;display:flex;align-items:center;justify-content:center;border-radius:9px;padding:7px;transition:all 0.12s;font-family:inherit;-webkit-tap-highlight-color:transparent}
         .icon-btn:hover{color:#1a1a1a;background:rgba(0,0,0,0.06)}
 
-        .ctrl-btn{
-          background:none;border:none;cursor:pointer;color:#999;
-          display:flex;align-items:center;justify-content:center;
-          border-radius:50%;width:40px;height:40px;min-width:40px;
-          transition:color 0.13s,background 0.13s,transform 0.1s;flex-shrink:0;
-          -webkit-tap-highlight-color:transparent;
-        }
+        .ctrl-btn{background:none;border:none;cursor:pointer;color:#999;display:flex;align-items:center;justify-content:center;border-radius:50%;width:40px;height:40px;min-width:40px;transition:color 0.13s,background 0.13s,transform 0.1s;flex-shrink:0;-webkit-tap-highlight-color:transparent}
         .ctrl-btn:hover{color:#000;background:rgba(0,0,0,0.07);transform:scale(1.1)}
         .ctrl-btn:active{transform:scale(0.92)}
         .ctrl-btn.active{color:${accent}}
 
-        /* ── Floating pill player ── */
-        .player-pill{
-          background:rgba(255,255,255,0.84);
-          backdrop-filter:blur(44px);-webkit-backdrop-filter:blur(44px);
-          border:1px solid rgba(255,255,255,0.97);
-          outline:1px solid rgba(0,0,0,0.06);
-          border-radius:999px;
-          box-shadow:0 0 0 1px rgba(0,0,0,0.04),0 8px 32px rgba(0,0,0,0.12),0 2px 6px rgba(0,0,0,0.07),${settings.accentBar ? `0 0 0 2px ${accent}22` : ""};
-        }
-        .play-btn{
-          width:46px;height:46px;min-width:46px;border-radius:50%;
-          border:2px solid ${accent};background:${accent};color:#fff;
-          cursor:pointer;display:flex;align-items:center;justify-content:center;
-          box-shadow:0 0 0 1px rgba(0,0,0,0.05),0 2px 10px ${accent}44,2px 2px 0 ${accent}88;
-          transition:all 0.13s;flex-shrink:0;-webkit-tap-highlight-color:transparent;
-        }
-        .play-btn:hover{transform:scale(1.1);box-shadow:0 0 0 1px rgba(0,0,0,0.05),0 4px 18px ${accent}55,4px 4px 0 ${accent}88}
-        .play-btn:active{transform:scale(0.92);box-shadow:0 0 0 1px rgba(0,0,0,0.05),0 1px 4px ${accent}33}
+        .player-pill{background:rgba(255,255,255,0.84);backdrop-filter:blur(44px);-webkit-backdrop-filter:blur(44px);border:1px solid rgba(255,255,255,0.97);outline:1px solid rgba(0,0,0,0.06);border-radius:999px;box-shadow:0 0 0 1px rgba(0,0,0,0.04),0 8px 32px rgba(0,0,0,0.12),0 2px 6px rgba(0,0,0,0.07)${settings.accentBar ? `,0 0 0 2px ${accent}22` : ""}}
 
-        .nav-btn{
-          display:flex;align-items:center;gap:8px;width:100%;padding:8px 12px;
-          border-radius:10px;border:none;background:transparent;color:#888;
-          font-family:inherit;font-size:12.5px;font-weight:700;
-          cursor:pointer;transition:all 0.13s;text-align:left;
-          -webkit-tap-highlight-color:transparent;
-        }
+        .play-btn{width:46px;height:46px;min-width:46px;border-radius:50%;border:2px solid ${accent};background:${accent};color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 1px rgba(0,0,0,0.05),0 2px 10px ${accent}44,2px 2px 0 ${accent}88;transition:all 0.13s;flex-shrink:0;-webkit-tap-highlight-color:transparent}
+        .play-btn:hover{transform:scale(1.1);box-shadow:0 0 0 1px rgba(0,0,0,0.05),0 4px 18px ${accent}55,4px 4px 0 ${accent}88}
+        .play-btn:active{transform:scale(0.92)}
+
+        .nav-btn{display:flex;align-items:center;gap:8px;width:100%;padding:8px 12px;border-radius:10px;border:none;background:transparent;color:#888;font-family:inherit;font-size:12.5px;font-weight:700;cursor:pointer;transition:all 0.13s;text-align:left;-webkit-tap-highlight-color:transparent}
         .nav-btn:hover{color:#1a1a1a;background:rgba(255,255,255,0.5)}
         .nav-btn.active{color:#fff;background:${accent};box-shadow:0 0 0 1px rgba(0,0,0,0.05),0 1px 4px ${accent}44,2px 2px 0 ${accent}88}
 
-        .seek-wrap{
-          cursor:pointer;position:relative;overflow:hidden;
-          height:${settings.showWaveform ? "7px" : "4px"};
-          background:rgba(0,0,0,0.07);border-radius:999px;
-          transition:height 0.15s;
-        }
+        .seek-wrap{cursor:pointer;position:relative;overflow:hidden;height:${settings.showWaveform ? "7px" : "4px"};background:rgba(0,0,0,0.07);border-radius:999px;transition:height 0.15s}
         .seek-wrap:hover{height:${settings.showWaveform ? "9px" : "7px"}}
         .seek-fill{position:absolute;left:0;top:0;height:100%;background:${accent};pointer-events:none;transition:width 0.1s linear;border-radius:999px}
 
-        input[type=text]{
-          background:rgba(255,255,255,0.7);border:1.5px solid rgba(0,0,0,0.1);
-          border-radius:10px;padding:9px 12px;font-family:inherit;font-size:13px;
-          font-weight:600;outline:none;color:#1a1a1a;width:100%;
-          backdrop-filter:blur(12px);
-        }
+        input[type=text]{background:rgba(255,255,255,0.7);border:1.5px solid rgba(0,0,0,0.1);border-radius:10px;padding:9px 12px;font-family:inherit;font-size:13px;font-weight:600;outline:none;color:#1a1a1a;width:100%;backdrop-filter:blur(12px)}
         input[type=text]:focus{border-color:#000;box-shadow:0 0 0 3px rgba(0,0,0,0.07)}
 
-        .loading-shimmer{
-          background:linear-gradient(90deg,rgba(255,255,255,0.3) 25%,rgba(255,255,255,0.65) 50%,rgba(255,255,255,0.3) 75%);
-          background-size:200% 100%;animation:shimmer 1.4s infinite;
-        }
+        .loading-shimmer{background:linear-gradient(90deg,rgba(255,255,255,0.3) 25%,rgba(255,255,255,0.65) 50%,rgba(255,255,255,0.3) 75%);background-size:200% 100%;animation:shimmer 1.4s infinite}
 
-        /* ── Mobile bottom sheet ── */
-        .bottom-sheet{
-          position:fixed;left:0;right:0;bottom:0;z-index:160;
-          background:rgba(255,255,255,0.95);
-          backdrop-filter:blur(44px);-webkit-backdrop-filter:blur(44px);
-          border-top:1px solid rgba(255,255,255,0.9);
-          border-radius:22px 22px 0 0;
-          box-shadow:0 -2px 40px rgba(0,0,0,0.13),0 -1px 0 rgba(0,0,0,0.06);
-          animation:slideUpSheet 0.28s cubic-bezier(0.34,1.2,0.64,1);
-          padding:6px 16px env(safe-area-inset-bottom,20px);
-          max-height:92vh;overflow-y:auto;
-        }
+        .bottom-sheet{position:fixed;left:0;right:0;bottom:0;z-index:160;background:rgba(255,255,255,0.95);backdrop-filter:blur(44px);-webkit-backdrop-filter:blur(44px);border-top:1px solid rgba(255,255,255,0.9);border-radius:22px 22px 0 0;box-shadow:0 -2px 40px rgba(0,0,0,0.13);animation:slideUpSheet 0.28s cubic-bezier(0.34,1.2,0.64,1);padding:6px 16px env(safe-area-inset-bottom,20px);max-height:92vh;overflow-y:auto}
         .sheet-handle{width:36px;height:4px;border-radius:2px;background:rgba(0,0,0,0.12);margin:10px auto 14px;cursor:pointer}
 
-        /* ── Toast notification ── */
-        .toast{
-          position:fixed;bottom:106px;left:50%;z-index:9999;
-          transform:translateX(-50%);
-          display:inline-flex;align-items:center;gap:7px;
-          padding:9px 18px;border-radius:999px;
-          background:rgba(0,0,0,0.88);color:#fff;
-          backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
-          font-size:13px;font-weight:700;letter-spacing:-0.01em;
-          box-shadow:0 4px 24px rgba(0,0,0,0.25);
-          animation:toastIn 0.22s cubic-bezier(0.34,1.56,0.64,1);
-          white-space:nowrap;max-width:88vw;overflow:hidden;text-overflow:ellipsis;
-        }
+        .toast{position:fixed;bottom:106px;left:50%;z-index:9999;transform:translateX(-50%);display:inline-flex;align-items:center;gap:7px;padding:9px 18px;border-radius:999px;background:rgba(0,0,0,0.88);color:#fff;backdrop-filter:blur(20px);font-size:13px;font-weight:700;box-shadow:0 4px 24px rgba(0,0,0,0.25);animation:toastIn 0.22s cubic-bezier(0.34,1.56,0.64,1);white-space:nowrap;max-width:88vw;overflow:hidden;text-overflow:ellipsis}
         .toast.success{background:rgba(15,122,75,0.93)}
         .toast.error{background:rgba(195,36,36,0.93)}
+
+        /* ── Apple Music-style Now Playing sidebar ── */
+        .now-playing-panel{
+          display:flex;flex-direction:column;
+          background:rgba(255,255,255,0.62);
+          backdrop-filter:blur(44px);-webkit-backdrop-filter:blur(44px);
+          border-left:1px solid rgba(255,255,255,0.7);
+        }
 
         @media(max-width:767px){
           .ctrl-btn{width:44px;height:44px;min-width:44px}
@@ -1095,11 +1182,9 @@ export default function App() {
                 </span>
               </button>
             )}
-            {/* Vercel-style deployment status badge */}
             {!isMobile && (
               <div style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "#000", color: "#fff", fontSize: 10, fontWeight: 800, letterSpacing: "0.05em", padding: "4px 10px 4px 8px", borderRadius: 8, fontFamily: "'DM Mono',monospace", boxShadow: "1px 1px 0 rgba(0,0,0,0.35)" }}>
-                <span style={{ color: "#3ecf8e", fontSize: 9, lineHeight: 1 }}>●</span>
-                ▲ MUSIC
+                <span style={{ color: "#3ecf8e", fontSize: 9 }}>●</span> ▲ MUSIC
               </div>
             )}
             {settings.playbackSpeed !== 1 && <SpeedBadge speed={settings.playbackSpeed} accent={accent} />}
@@ -1111,9 +1196,16 @@ export default function App() {
                 <List size={14} />
               </button>
             )}
-            {!isMobile && (
+            {/* Keyboard button — only shown on devices with keyboards */}
+            {hasKb && !isMobile && (
               <button onClick={() => setShowKeyboard(true)} className="vbtn vbtn-ghost" style={{ padding: "5px 7px" }} title="Keyboard shortcuts (K)">
                 <Keyboard size={13} />
+              </button>
+            )}
+            {/* PWA Install button in header */}
+            {!pwa.installed && !isMobile && (
+              <button onClick={() => setShowInstall(true)} className="vbtn vbtn-ghost" style={{ fontSize: 11, gap: 4 }} title="Install as app">
+                <MonitorDown size={12} /> Install
               </button>
             )}
             <button onClick={() => setShowReqUpload(true)} className="vbtn vbtn-ghost" style={{ fontSize: 12, gap: 4 }}>
@@ -1129,7 +1221,7 @@ export default function App() {
         {/* ── BODY ── */}
         <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
 
-          {/* Left sidebar — desktop */}
+          {/* Left sidebar */}
           {!isMobile && (
             <div className="glass" style={{ width: 192, flexShrink: 0, display: "flex", flexDirection: "column", padding: "12px 9px", gap: 2, borderRight: "1px solid rgba(255,255,255,0.55)", overflowY: "auto" }}>
               <SidebarContent />
@@ -1138,7 +1230,6 @@ export default function App() {
 
           {/* Main content */}
           <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-            {/* Toolbar */}
             <div style={{ padding: isMobile ? "7px 10px" : "8px 14px", flexShrink: 0, display: "flex", alignItems: "center", gap: 7, borderBottom: "1px solid rgba(0,0,0,0.05)", minHeight: 48, background: "rgba(255,255,255,0.18)" }}>
               {view === "browser" ? (
                 <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 7, background: "rgba(255,255,255,0.65)", backdropFilter: "blur(16px)", WebkitBackdropFilter: "blur(16px)", border: "1px solid rgba(0,0,0,0.08)", borderRadius: 999, padding: "0 12px", height: 35, boxShadow: "inset 0 1px 3px rgba(0,0,0,0.04)" }}>
@@ -1164,7 +1255,6 @@ export default function App() {
               )}
             </div>
 
-            {/* Track list */}
             <div style={{ flex: 1, overflowY: "auto", padding: `6px 0 ${isMobile ? "144px" : "12px"}` }}>
               {loading && view === "browser" ? (
                 <div style={{ padding: "8px" }}>
@@ -1174,7 +1264,7 @@ export default function App() {
                 </div>
               ) : displayList.length === 0 ? (
                 <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", gap: 13, color: "#bbb", animation: "fadeIn 0.3s ease" }}>
-                  <div style={{ width: 54, height: 54, borderRadius: 16, background: "rgba(255,255,255,0.65)", backdropFilter: "blur(10px)", display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid rgba(0,0,0,0.07)", boxShadow: "0 2px 12px rgba(0,0,0,0.06)" }}>
+                  <div style={{ width: 54, height: 54, borderRadius: 16, background: "rgba(255,255,255,0.65)", backdropFilter: "blur(10px)", display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid rgba(0,0,0,0.07)" }}>
                     {view === "favorites" ? <Heart size={22} color="#d8d3cb" /> : view === "history" ? <Clock size={22} color="#d8d3cb" /> : view === "playlist" ? <List size={22} color="#d8d3cb" /> : <Folder size={22} color="#d8d3cb" />}
                   </div>
                   <div style={{ textAlign: "center" }}>
@@ -1197,7 +1287,7 @@ export default function App() {
                     delay={Math.min(idx * 0.015, 0.2)}
                     onPlay={playSong}
                     onFolder={() => setCurrentPath(currentPath ? `${currentPath}/${item.name}` : item.name)}
-                    onFavorite={song => { toggleFav(song); showToast(favorites.some(s => s.name === song.name) ? "Removed from favorites" : "Added to favorites ♥", "success"); }}
+                    onFavorite={song => { const was = isFav(song); toggleFav(song); showToast(was ? "Removed from favorites" : "Added to favorites ♥", "success"); }}
                     onDownload={downloadSong}
                     onAddToPlaylist={addToPlaylist}
                     onRemoveFromPlaylist={(name) => removeFromPlaylist(name, activePlaylistId)}
@@ -1214,64 +1304,115 @@ export default function App() {
             </div>
           </div>
 
-          {/* Desktop Now Playing sidebar */}
+          {/* ── APPLE MUSIC-STYLE NOW PLAYING SIDEBAR ── */}
           {!isMobile && currentSong && (
-            <div className="glass" style={{ width: 212, flexShrink: 0, display: "flex", flexDirection: "column", padding: "16px 14px", gap: 12, overflowY: "auto", borderLeft: "1px solid rgba(255,255,255,0.55)", animation: "slideIn 0.3s ease" }}>
-              <div style={{ width: "100%", aspectRatio: "1", borderRadius: 14, background: "rgba(0,0,0,0.04)", border: `1.5px solid ${accent}44`, boxShadow: `0 0 0 1px rgba(0,0,0,0.03),0 6px 20px ${accent}1a,3px 3px 0 ${accent}55`, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", flexShrink: 0 }}>
-                {settings.visualizer ? <Visualizer isPlaying={isPlaying} bars={16} color={accent} height={56} /> : <Music size={36} color={accent} />}
+            <div className="now-playing-panel" style={{ width: 226, flexShrink: 0, overflowY: "auto", animation: "slideIn 0.3s ease" }}>
+              {/* Album art area with gradient background */}
+              <div style={{ position: "relative", padding: "20px 20px 0" }}>
+                {/* Blurred background tint */}
+                <div style={{ position: "absolute", inset: 0, background: `linear-gradient(160deg, ${accent}18, transparent 60%)`, borderRadius: "0 0 24px 24px", pointerEvents: "none" }} />
+
+                {/* Art card */}
+                <div style={{ position: "relative", width: "100%", aspectRatio: "1", borderRadius: 20, overflow: "hidden", background: `linear-gradient(145deg, ${accent}22, ${accent}08)`, boxShadow: `0 12px 40px ${accent}28, 0 4px 16px rgba(0,0,0,0.14), 0 0 0 1px rgba(255,255,255,0.5) inset`, marginBottom: 16 }}>
+                  <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    {settings.visualizer
+                      ? <Visualizer isPlaying={isPlaying} bars={20} color={accent} height={80} />
+                      : (
+                        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
+                          <Music size={44} color={accent} style={{ opacity: 0.7 }} />
+                        </div>
+                      )
+                    }
+                  </div>
+                  {/* Subtle inner shine */}
+                  <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: "40%", background: "linear-gradient(to bottom, rgba(255,255,255,0.15), transparent)", pointerEvents: "none", borderRadius: "20px 20px 0 0" }} />
+                </div>
               </div>
 
-              {/* Full title — never truncated */}
-              <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8 }}>
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ fontSize: 13, fontWeight: 800, color: "#000", wordBreak: "break-word", lineHeight: 1.4 }}>{currentSong.title}</div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 4, flexWrap: "wrap" }}>
-                    <span style={{ fontSize: 10, color: "#bbb", fontFamily: "'DM Mono',monospace" }}>{currentPath || "Library"}</span>
-                    {settings.playbackSpeed !== 1 && <SpeedBadge speed={settings.playbackSpeed} accent={accent} />}
+              {/* Track info */}
+              <div style={{ padding: "0 20px 14px" }}>
+                <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8, marginBottom: 12 }}>
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <div style={{ fontSize: 14, fontWeight: 800, color: "#000", wordBreak: "break-word", lineHeight: 1.35, letterSpacing: "-0.02em" }}>
+                      {currentSong.title}
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 4, flexWrap: "wrap" }}>
+                      <span style={{ fontSize: 11, color: "#999", fontWeight: 600 }}>{currentPath || "Library"}</span>
+                      {settings.playbackSpeed !== 1 && <SpeedBadge speed={settings.playbackSpeed} accent={accent} />}
+                    </div>
                   </div>
+                  <button
+                    onClick={() => { toggleFav(currentSong); showToast(isFav(currentSong) ? "Removed ♥" : "Added to favorites ♥", "success"); }}
+                    style={{ background: isFav(currentSong) ? `${accent}18` : "rgba(0,0,0,0.04)", border: `1px solid ${isFav(currentSong) ? accent + "44" : "rgba(0,0,0,0.08)"}`, borderRadius: "50%", width: 34, height: 34, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, transition: "all 0.15s" }}>
+                    <Heart size={14} fill={isFav(currentSong) ? accent : "none"} color={isFav(currentSong) ? accent : "#ccc"} />
+                  </button>
                 </div>
-                <button onClick={() => { toggleFav(currentSong); showToast(isFav(currentSong) ? "Removed ♥" : "Added to favorites ♥", "success"); }} className="icon-btn" style={{ padding: 4, flexShrink: 0 }}>
-                  <Heart size={14} fill={isFav(currentSong) ? accent : "none"} color={isFav(currentSong) ? accent : "#ccc"} />
+
+                {/* Time */}
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "#bbb", fontFamily: "'DM Mono',monospace", marginBottom: 14 }}>
+                  <span>{fmt(currentTime)}</span>
+                  <span>{fmt(durations[currentSong.name] || duration)}</span>
+                </div>
+
+                {/* Mini seek */}
+                <div style={{ height: 3, background: "rgba(0,0,0,0.08)", borderRadius: 999, overflow: "hidden", marginBottom: 16 }}>
+                  <div style={{ height: "100%", background: accent, width: `${progress}%`, transition: "width 0.1s linear", borderRadius: 999 }} />
+                </div>
+
+                {/* Playback controls */}
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+                  <button className={`ctrl-btn${shuffle ? " active" : ""}`} onClick={() => setShuffle(p => !p)} style={{ width: 36, height: 36, minWidth: 36 }} title="Shuffle">
+                    <Shuffle size={14} />
+                  </button>
+                  <button className="ctrl-btn" onClick={handlePrev} style={{ width: 36, height: 36, minWidth: 36 }} title="Previous">
+                    <SkipBack size={18} />
+                  </button>
+                  <button className="play-btn" onClick={() => setIsPlaying(p => !p)} style={{ width: 44, height: 44, minWidth: 44 }}>
+                    {isPlaying ? <Pause size={17} fill="white" /> : <Play size={17} fill="white" style={{ marginLeft: 2 }} />}
+                  </button>
+                  <button className="ctrl-btn" onClick={handleNext} style={{ width: 36, height: 36, minWidth: 36 }} title="Next">
+                    <SkipForward size={18} />
+                  </button>
+                  <button className={`ctrl-btn${repeat !== REPEAT_M.NONE ? " active" : ""}`} onClick={() => setRepeat(r => r === REPEAT_M.NONE ? REPEAT_M.ALL : r === REPEAT_M.ALL ? REPEAT_M.ONE : REPEAT_M.NONE)} style={{ width: 36, height: 36, minWidth: 36 }} title="Repeat">
+                    <RepIcon size={14} />
+                  </button>
+                </div>
+
+                {/* Download */}
+                <button onClick={() => downloadSong(currentSong)} className="vbtn vbtn-ghost" style={{ width: "100%", justifyContent: "center", gap: 6, fontSize: 11, borderRadius: 12, padding: "9px" }}>
+                  <Download size={12} />
+                  {dlProgress[currentSong.name] !== undefined ? (dlProgress[currentSong.name] === "done" ? "Done!" : dlProgress[currentSong.name] === "error" ? "Error" : `${dlProgress[currentSong.name]}%`) : "Download"}
                 </button>
-              </div>
-
-              {/* Stats */}
-              <div style={{ background: "rgba(255,255,255,0.55)", backdropFilter: "blur(16px)", borderRadius: 12, padding: "10px 12px", border: "1px solid rgba(255,255,255,0.85)", boxShadow: "0 1px 4px rgba(0,0,0,0.05)" }}>
-                {[
-                  ["Time",    `${fmt(currentTime)} / ${fmt(durations[currentSong.name] || duration)}`],
-                  ["Shuffle", shuffle ? "On" : "Off"],
-                  ["Repeat",  repeat],
-                  ...(settings.playbackSpeed !== 1 ? [["Speed", `${settings.playbackSpeed}×`]] : []),
-                  ...(settings.sleepMins > 0 ? [["Sleep", `${settings.sleepMins}m`]] : []),
-                ].map(([k, v]) => (
-                  <div key={k} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 11, marginBottom: 6 }}>
-                    <span style={{ color: "#bbb", fontWeight: 600 }}>{k}</span>
-                    <span style={{ fontWeight: 800, fontFamily: "'DM Mono',monospace", color: accent, fontSize: 10 }}>{v}</span>
+                {dlProgress[currentSong.name] !== undefined && typeof dlProgress[currentSong.name] === "number" && (
+                  <div style={{ height: 3, background: "rgba(0,0,0,0.06)", borderRadius: 2, overflow: "hidden", marginTop: 6 }}>
+                    <div style={{ height: "100%", background: accent, width: `${dlProgress[currentSong.name]}%`, transition: "width 0.2s linear" }} />
                   </div>
-                ))}
+                )}
+
+                {/* Sleep / speed info */}
+                {(settings.sleepMins > 0 || settings.playbackSpeed !== 1) && (
+                  <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap" }}>
+                    {settings.sleepMins > 0 && (
+                      <div style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 10, color: "#aaa", background: "rgba(0,0,0,0.05)", padding: "3px 9px", borderRadius: 20, fontFamily: "'DM Mono',monospace" }}>
+                        <Moon size={9} />{settings.sleepMins}m
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
-              <button onClick={() => downloadSong(currentSong)} className="vbtn vbtn-ghost" style={{ width: "100%", justifyContent: "center", gap: 6, fontSize: 11, borderRadius: 10 }}>
-                <Download size={12} />
-                {dlProgress[currentSong.name] !== undefined ? (dlProgress[currentSong.name] === "done" ? "Done!" : dlProgress[currentSong.name] === "error" ? "Error" : `${dlProgress[currentSong.name]}%`) : "Download"}
-              </button>
-              {dlProgress[currentSong.name] !== undefined && typeof dlProgress[currentSong.name] === "number" && (
-                <div style={{ height: 3, background: "rgba(0,0,0,0.06)", borderRadius: 2, overflow: "hidden", marginTop: -8 }}>
-                  <div style={{ height: "100%", background: accent, width: `${dlProgress[currentSong.name]}%`, transition: "width 0.2s linear" }} />
-                </div>
-              )}
-
+              {/* Playlists */}
               {playlists.length > 0 && (
-                <div>
-                  <div style={{ fontSize: 9, fontWeight: 800, color: "#bbb", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 7 }}>Add to Playlist</div>
+                <div style={{ padding: "0 20px 20px", borderTop: "1px solid rgba(0,0,0,0.06)", paddingTop: 14, marginTop: 2 }}>
+                  <div style={{ fontSize: 9, fontWeight: 800, color: "#bbb", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 8 }}>Add to Playlist</div>
                   <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                     {playlists.map(pl => {
                       const added = pl.songs.some(s => s.name === currentSong.name);
                       return (
                         <button key={pl.id} onClick={() => !added && addToPlaylist(currentSong, pl.id)} disabled={added}
-                          style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6, padding: "7px 10px", borderRadius: 9, border: `1px solid ${added ? "rgba(0,0,0,0.04)" : "rgba(0,0,0,0.08)"}`, background: added ? "rgba(0,0,0,0.02)" : "rgba(255,255,255,0.55)", fontSize: 11, fontWeight: 700, cursor: added ? "default" : "pointer", color: added ? "#bbb" : "#444", fontFamily: "inherit", transition: "all 0.12s" }}
-                          onMouseEnter={e => { if (!added) e.currentTarget.style.background = "rgba(255,255,255,0.85)"; }}
-                          onMouseLeave={e => { e.currentTarget.style.background = added ? "rgba(0,0,0,0.02)" : "rgba(255,255,255,0.55)"; }}>
+                          style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6, padding: "7px 10px", borderRadius: 10, border: `1px solid ${added ? "rgba(0,0,0,0.04)" : "rgba(0,0,0,0.08)"}`, background: added ? "rgba(0,0,0,0.02)" : "rgba(255,255,255,0.6)", fontSize: 11, fontWeight: 700, cursor: added ? "default" : "pointer", color: added ? "#bbb" : "#444", fontFamily: "inherit", transition: "all 0.12s" }}
+                          onMouseEnter={e => { if (!added) e.currentTarget.style.background = "rgba(255,255,255,0.9)"; }}
+                          onMouseLeave={e => { e.currentTarget.style.background = added ? "rgba(0,0,0,0.02)" : "rgba(255,255,255,0.6)"; }}>
                           <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{pl.name}</span>
                           {added ? <Check size={10} color="#bbb" /> : <Plus size={10} />}
                         </button>
@@ -1284,9 +1425,8 @@ export default function App() {
           )}
         </div>
 
-        {/* ── FLOATING PILL PLAYER BAR ── */}
+        {/* ── FLOATING PILL PLAYER ── */}
         <div style={{ flexShrink: 0, padding: isMobile ? "0 10px 18px" : "0 14px 14px", background: "transparent" }}>
-          {/* Seek bar — above pill */}
           <div ref={seekBarRef} className="seek-wrap"
             style={{ cursor: duration ? "pointer" : "default", margin: "0 6px 8px" }}
             onClick={e => handleSeek(e.clientX)}
@@ -1298,10 +1438,7 @@ export default function App() {
             <div className="seek-fill" style={{ width: `${progress}%` }} />
           </div>
 
-          {/* The pill */}
           <div className="player-pill" style={{ display: "flex", alignItems: "center", gap: isMobile ? 5 : 10, height: isMobile ? 58 : 62, padding: `0 ${isMobile ? "10px" : "14px"}` }}>
-
-            {/* Track info */}
             <div style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: isMobile ? 7 : 9 }}>
               <div onClick={isMobile && currentSong ? () => setShowNowPlaying(p => !p) : undefined}
                 style={{ width: isMobile ? 33 : 37, height: isMobile ? 33 : 37, borderRadius: 999, flexShrink: 0, background: currentSong ? accent : "rgba(0,0,0,0.07)", border: `1.5px solid ${currentSong ? accent : "rgba(0,0,0,0.07)"}`, boxShadow: currentSong ? `0 2px 8px ${accent}33` : "none", display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.2s", cursor: isMobile && currentSong ? "pointer" : "default" }}>
@@ -1317,18 +1454,16 @@ export default function App() {
               </div>
             </div>
 
-            {/* Controls */}
             <div style={{ display: "flex", alignItems: "center", gap: isMobile ? 0 : 2 }}>
-              {!isMobile && <button className={`ctrl-btn${shuffle ? " active" : ""}`} onClick={() => setShuffle(p => !p)} title="Shuffle (S)"><Shuffle size={14} /></button>}
-              <button className="ctrl-btn" onClick={handlePrev} title="Previous (←)"><SkipBack size={isMobile ? 18 : 17} /></button>
-              <button className="play-btn" onClick={() => setIsPlaying(p => !p)} title="Play/Pause (Space)">
+              {!isMobile && <button className={`ctrl-btn${shuffle ? " active" : ""}`} onClick={() => setShuffle(p => !p)}><Shuffle size={14} /></button>}
+              <button className="ctrl-btn" onClick={handlePrev}><SkipBack size={isMobile ? 18 : 17} /></button>
+              <button className="play-btn" onClick={() => setIsPlaying(p => !p)}>
                 {isPlaying ? <Pause size={17} fill="white" /> : <Play size={17} fill="white" style={{ marginLeft: 2 }} />}
               </button>
-              <button className="ctrl-btn" onClick={handleNext} title="Next (→)"><SkipForward size={isMobile ? 18 : 17} /></button>
-              {!isMobile && <button className={`ctrl-btn${repeat !== REPEAT_M.NONE ? " active" : ""}`} onClick={() => setRepeat(r => r === REPEAT_M.NONE ? REPEAT_M.ALL : r === REPEAT_M.ALL ? REPEAT_M.ONE : REPEAT_M.NONE)} title="Repeat (R)"><RepIcon size={14} /></button>}
+              <button className="ctrl-btn" onClick={handleNext}><SkipForward size={isMobile ? 18 : 17} /></button>
+              {!isMobile && <button className={`ctrl-btn${repeat !== REPEAT_M.NONE ? " active" : ""}`} onClick={() => setRepeat(r => r === REPEAT_M.NONE ? REPEAT_M.ALL : r === REPEAT_M.ALL ? REPEAT_M.ONE : REPEAT_M.NONE)}><RepIcon size={14} /></button>}
             </div>
 
-            {/* Right */}
             <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 2 }}>
               {settings.sleepMins > 0 && !isMobile && (
                 <div style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 10, color: "#aaa", fontFamily: "'DM Mono',monospace", background: "rgba(0,0,0,0.05)", padding: "3px 8px", borderRadius: 20 }}>
@@ -1337,8 +1472,8 @@ export default function App() {
               )}
               {currentSong && !isMobile && (
                 <>
-                  <button onClick={() => downloadSong(currentSong)} className="icon-btn" style={{ padding: 5 }} title="Download (D)"><Download size={13} /></button>
-                  <button onClick={() => { toggleFav(currentSong); showToast(isFav(currentSong) ? "Removed ♥" : "Added to favorites ♥", "success"); }} className="icon-btn" style={{ padding: 5 }} title="Favorite (F)">
+                  <button onClick={() => downloadSong(currentSong)} className="icon-btn" style={{ padding: 5 }}><Download size={13} /></button>
+                  <button onClick={() => { toggleFav(currentSong); showToast(isFav(currentSong) ? "Removed ♥" : "Added to favorites ♥", "success"); }} className="icon-btn" style={{ padding: 5 }}>
                     <Heart size={13} fill={isFav(currentSong) ? accent : "none"} color={isFav(currentSong) ? accent : "#bbb"} />
                   </button>
                 </>
@@ -1354,11 +1489,11 @@ export default function App() {
         </div>
       </div>
 
-      {/* ── MOBILE BOTTOM SHEET ── */}
+      {/* ── MOBILE NOW PLAYING SHEET ── */}
       {isMobile && showNowPlaying && currentSong && (
         <div className="bottom-sheet">
           <div className="sheet-handle" onClick={() => setShowNowPlaying(false)} />
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
               <span style={{ fontSize: 11, fontWeight: 800, color: "#999", letterSpacing: "0.07em", textTransform: "uppercase" }}>Now Playing</span>
               {settings.playbackSpeed !== 1 && <SpeedBadge speed={settings.playbackSpeed} accent={accent} />}
@@ -1366,52 +1501,55 @@ export default function App() {
             <button onClick={() => setShowNowPlaying(false)} className="icon-btn" style={{ padding: 4 }}><X size={15} /></button>
           </div>
 
-          {/* Art + full title */}
-          <div style={{ display: "flex", gap: 13, alignItems: "flex-start", marginBottom: 18 }}>
-            <div style={{ width: 70, height: 70, borderRadius: 14, flexShrink: 0, background: "rgba(0,0,0,0.04)", border: `1.5px solid ${accent}44`, boxShadow: `0 4px 16px ${accent}1a,3px 3px 0 ${accent}55`, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
-              {settings.visualizer ? <Visualizer isPlaying={isPlaying} bars={8} color={accent} height={40} /> : <Music size={26} color={accent} />}
-            </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              {/* Full title — wordBreak, no truncation */}
-              <div style={{ fontSize: 15, fontWeight: 800, color: "#000", wordBreak: "break-word", lineHeight: 1.35 }}>{currentSong.title}</div>
-              <div style={{ fontSize: 11, color: "#aaa", fontFamily: "'DM Mono',monospace", marginTop: 4 }}>{currentPath || "Library"} · {fmt(durations[currentSong.name] || duration)}</div>
-            </div>
+          {/* Art */}
+          <div style={{ width: "56%", aspectRatio: "1", borderRadius: 20, overflow: "hidden", background: `linear-gradient(145deg, ${accent}22, ${accent}08)`, boxShadow: `0 12px 36px ${accent}28, 0 4px 16px rgba(0,0,0,0.12)`, margin: "0 auto 20px", display: "flex", alignItems: "center", justifyContent: "center" }}>
+            {settings.visualizer
+              ? <Visualizer isPlaying={isPlaying} bars={14} color={accent} height={80} />
+              : <Music size={44} color={accent} style={{ opacity: 0.7 }} />
+            }
           </div>
 
-          {/* Playback controls */}
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 3, marginBottom: 14 }}>
-            <button className={`ctrl-btn${shuffle ? " active" : ""}`} onClick={() => setShuffle(p => !p)}><Shuffle size={16} /></button>
-            <button className="ctrl-btn" onClick={handlePrev}><SkipBack size={22} /></button>
-            <button className="play-btn" style={{ width: 58, height: 58, minWidth: 58 }} onClick={() => setIsPlaying(p => !p)}>
-              {isPlaying ? <Pause size={20} fill="white" /> : <Play size={20} fill="white" style={{ marginLeft: 2 }} />}
+          {/* Title + fav */}
+          <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, marginBottom: 8, padding: "0 4px" }}>
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <div style={{ fontSize: 18, fontWeight: 800, color: "#000", wordBreak: "break-word", lineHeight: 1.25, letterSpacing: "-0.02em" }}>{currentSong.title}</div>
+              <div style={{ fontSize: 12, color: "#999", fontWeight: 600, marginTop: 4 }}>{currentPath || "Library"} · {fmt(durations[currentSong.name] || duration)}</div>
+            </div>
+            <button onClick={() => { toggleFav(currentSong); showToast(isFav(currentSong) ? "Removed ♥" : "Added to favorites ♥", "success"); }}
+              style={{ background: isFav(currentSong) ? `${accent}18` : "rgba(0,0,0,0.04)", border: `1px solid ${isFav(currentSong) ? accent + "44" : "rgba(0,0,0,0.08)"}`, borderRadius: "50%", width: 38, height: 38, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, transition: "all 0.15s" }}>
+              <Heart size={16} fill={isFav(currentSong) ? accent : "none"} color={isFav(currentSong) ? accent : "#ccc"} />
             </button>
-            <button className="ctrl-btn" onClick={handleNext}><SkipForward size={22} /></button>
-            <button className={`ctrl-btn${repeat !== REPEAT_M.NONE ? " active" : ""}`} onClick={() => setRepeat(r => r === REPEAT_M.NONE ? REPEAT_M.ALL : r === REPEAT_M.ALL ? REPEAT_M.ONE : REPEAT_M.NONE)}><RepIcon size={16} /></button>
+          </div>
+
+          {/* Controls */}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, margin: "18px 0" }}>
+            <button className={`ctrl-btn${shuffle ? " active" : ""}`} onClick={() => setShuffle(p => !p)}><Shuffle size={17} /></button>
+            <button className="ctrl-btn" onClick={handlePrev}><SkipBack size={24} /></button>
+            <button className="play-btn" style={{ width: 62, height: 62, minWidth: 62 }} onClick={() => setIsPlaying(p => !p)}>
+              {isPlaying ? <Pause size={22} fill="white" /> : <Play size={22} fill="white" style={{ marginLeft: 2 }} />}
+            </button>
+            <button className="ctrl-btn" onClick={handleNext}><SkipForward size={24} /></button>
+            <button className={`ctrl-btn${repeat !== REPEAT_M.NONE ? " active" : ""}`} onClick={() => setRepeat(r => r === REPEAT_M.NONE ? REPEAT_M.ALL : r === REPEAT_M.ALL ? REPEAT_M.ONE : REPEAT_M.NONE)}><RepIcon size={17} /></button>
           </div>
 
           {/* Speed picker */}
-          <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 14, flexWrap: "wrap" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 14, padding: "0 4px" }}>
             <span style={{ fontSize: 10, fontWeight: 800, color: "#bbb", letterSpacing: "0.08em", textTransform: "uppercase", flexShrink: 0 }}>Speed</span>
             <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
               {SPEEDS.map(s => (
                 <button key={s} onClick={() => settingChange("playbackSpeed", s)}
                   className={settings.playbackSpeed === s ? "vbtn vbtn-primary" : "vbtn vbtn-ghost"}
-                  style={{ fontSize: 11, padding: "4px 9px", borderRadius: 20 }}>
-                  {s}×
-                </button>
+                  style={{ fontSize: 11, padding: "4px 10px", borderRadius: 20 }}>{s}×</button>
               ))}
             </div>
           </div>
 
-          {/* Favorite + download */}
+          {/* Download */}
           <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-            <button onClick={() => { toggleFav(currentSong); showToast(isFav(currentSong) ? "Removed ♥" : "Added to favorites ♥", "success"); }} className="vbtn vbtn-ghost" style={{ flex: 2, justifyContent: "center", gap: 6, fontSize: 12, padding: "10px", borderRadius: 999 }}>
-              <Heart size={13} fill={isFav(currentSong) ? accent : "none"} color={isFav(currentSong) ? accent : "#555"} />
-              {isFav(currentSong) ? "Unfavorite" : "Favorite"}
-            </button>
-            <button onClick={() => downloadSong(currentSong)} className="vbtn vbtn-ghost" style={{ flex: 1, justifyContent: "center", gap: 5, fontSize: 11, padding: "10px 8px", borderRadius: 999 }}>
-              <Download size={12} />
-              {dlProgress[currentSong.name] !== undefined ? (dlProgress[currentSong.name] === "done" ? "✓" : dlProgress[currentSong.name] === "error" ? "!" : `${dlProgress[currentSong.name]}%`) : "DL"}
+            <button onClick={() => downloadSong(currentSong)} className="vbtn vbtn-ghost"
+              style={{ flex: 1, justifyContent: "center", gap: 5, fontSize: 12, padding: "10px", borderRadius: 999 }}>
+              <Download size={13} />
+              {dlProgress[currentSong.name] !== undefined ? (dlProgress[currentSong.name] === "done" ? "Done!" : dlProgress[currentSong.name] === "error" ? "Error" : `${dlProgress[currentSong.name]}%`) : "Download"}
             </button>
           </div>
           {dlProgress[currentSong.name] !== undefined && typeof dlProgress[currentSong.name] === "number" && (
@@ -1420,7 +1558,6 @@ export default function App() {
             </div>
           )}
 
-          {/* Playlists */}
           {playlists.length > 0 && (
             <div>
               <div style={{ fontSize: 9, fontWeight: 800, color: "#bbb", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 8 }}>Add to Playlist</div>
@@ -1461,6 +1598,7 @@ export default function App() {
       {showSettings && <SettingsPanel settings={settings} onChange={settingChange} onClose={() => setShowSettings(false)} />}
       {showReqUpload && <RequestUploadModal onClose={() => setShowReqUpload(false)} supabase={supabase} onRefresh={() => fetchItems(currentPath)} />}
       {showKeyboard  && <KeyboardModal onClose={() => setShowKeyboard(false)} />}
+      {showInstall   && <InstallModal onClose={() => setShowInstall(false)} pwa={pwa} />}
 
       {showNewPL && (
         <Modal onClose={() => setShowNewPL(false)} title="New Playlist" width="min(380px,93vw)">
@@ -1476,7 +1614,6 @@ export default function App() {
         </Modal>
       )}
 
-      {/* ── TOAST ── */}
       {toast && <div className={`toast ${toast.type}`}>{toast.msg}</div>}
 
       <audio ref={audioRef} src={currentSong?.url || ""} preload="auto"
